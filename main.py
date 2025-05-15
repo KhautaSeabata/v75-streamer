@@ -1,12 +1,9 @@
-import asyncio
+import os
 import json
-import websockets
-import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials
 
-# Load Firebase credentials from local file
-cred = credentials.Certificate("firebase_credentials.json")
-firebase_admin.initialize_app(cred)
+firebase_creds = json.loads(os.environ["FIREBASE_CREDENTIALS"])
+cred = credentials.Certificate(firebase_creds)
 db = firestore.client()
 
 async def stream_v75_candles():
