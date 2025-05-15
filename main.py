@@ -1,12 +1,15 @@
 import os
 import json
-import asyncio
-import websockets
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# Load Firebase credentials from Railway variable
-firebase_creds = json.loads(os.environ["FIREBASE_CREDENTIALS"])
+# Fallback to file or error message
+FIREBASE_CREDENTIALS = os.environ.get("FIREBASE_CREDENTIALS")
+
+if not FIREBASE_CREDENTIALS:
+    raise EnvironmentError("Missing FIREBASE_CREDENTIALS in environment variables.")
+
+firebase_creds = json.loads(FIREBASE_CREDENTIALS)
 cred = credentials.Certificate(firebase_creds)
 firebase_admin.initialize_app(cred)
 db = firestore.client()
