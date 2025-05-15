@@ -1,10 +1,18 @@
 import os
 import json
-from firebase_admin import credentials
+import asyncio
+import websockets
+import firebase_admin
+from firebase_admin import credentials, firestore
 
+# Load Firebase credentials from Railway variable
 firebase_creds = json.loads(os.environ["FIREBASE_CREDENTIALS"])
 cred = credentials.Certificate(firebase_creds)
+firebase_admin.initialize_app(cred)
 db = firestore.client()
+
+# Your code continues here...
+
 
 async def stream_v75_candles():
     uri = "wss://ws.derivws.com/websockets/v3?app_id=1089"
