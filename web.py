@@ -1,5 +1,5 @@
 from flask import Flask, render_template_string, jsonify
-from analyze import get_candles  # Your function to get candles data for the chart
+from analyze import get_candles  # This should still return your candle data
 
 app = Flask(__name__)
 
@@ -7,66 +7,34 @@ HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Signal Dashboard</title>
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <title>Data Loading Status</title>
     <style>
         body {
             font-family: Arial, sans-serif;
             padding: 40px;
-            background: #f4f4f4;
-        }
-        h1 {
+            background: #f9f9f9;
             color: #333;
+            text-align: center;
         }
-        #chart {
-            width: 600px;
-            height: 300px;
-        }
-        button {
-            padding: 10px 20px;
-            background-color: #6a1b9a;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #9c4d9d;
+        .status {
+            font-size: 24px;
+            margin-top: 100px;
         }
     </style>
 </head>
 <body>
-    <h1>Signal Dashboard</h1>
-
-    <div id="chart">Loading chart...</div>
-
-    <br><button onclick="alert('Telegram disabled, data is only stored in Firebase.')">Send Hello to Telegram</button>
+    <div class="status" id="status">Loading data...</div>
 
     <script>
-        function drawChart(data) {
-            const timestamps = data.map(c => c.timestamp);
-            const closePrices = data.map(c => c.close);
-
-            const trace = {
-                x: timestamps,
-                y: closePrices,
-                type: 'scatter',
-                mode: 'lines+markers',
-                line: { color: 'blue' },
-                marker: { size: 4 }
-            };
-
-            const layout = {
-                margin: { t: 20 },
-                title: 'Close Price Over Time',
-                xaxis: { title: 'Time' },
-                yaxis: { title: 'Close Price', autorange: true }
-            };
-
-            Plotly.newPlot('chart', [trace], layout, { responsive: true });
-        }
-
-        function loadChart() {
+        function checkDataStatus() {
             fetch('/candles')
                 .then(response => response.json())
-                .then(data
+                .then(data => {
+                    if (data && Array.isArray(data) && data.length > 0) {
+                        document.getElementById("status").textContent = "Data Loaded ✅";
+                    } else {
+                        document.getElementById("status").textContent = "No Data Found ❌";
+                    }
+                })
+                .catch(err => {
+                    document.getElementById("status").textContent = "
