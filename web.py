@@ -1,6 +1,5 @@
 from flask import Flask, render_template_string, jsonify
-from main import send_telegram_message  # Optional if you want to trigger Telegram
-from analyze import get_candles
+from analyze import get_candles  # Your function to get candles data for the chart
 
 app = Flask(__name__)
 
@@ -41,16 +40,9 @@ HTML_TEMPLATE = """
 
     <div id="chart">Loading chart...</div>
 
-    <br><button onclick="sendHello()">Send Hello to Telegram</button>
+    <br><button onclick="alert('Telegram disabled, data is only stored in Firebase.')">Send Hello to Telegram</button>
 
     <script>
-        function sendHello() {
-            fetch('/send_hello', { method: 'GET' })
-                .then(response => response.text())
-                .then(data => alert(data))
-                .catch(error => alert('Error sending message: ' + error));
-        }
-
         function drawChart(data) {
             const timestamps = data.map(c => c.timestamp);
             const closePrices = data.map(c => c.close);
@@ -77,42 +69,4 @@ HTML_TEMPLATE = """
         function loadChart() {
             fetch('/candles')
                 .then(response => response.json())
-                .then(data => {
-                    if (data && Array.isArray(data)) {
-                        drawChart(data);
-                    }
-                })
-                .catch(err => console.error("Error loading candle data:", err));
-        }
-
-        loadChart();
-        setInterval(loadChart, 60000);
-    </script>
-</body>
-</html>
-"""
-
-
-@app.route('/')
-def home():
-    return render_template_string(HTML_TEMPLATE)
-
-@app.route('/send_hello', methods=['GET'])
-def send_hello():
-    try:
-        send_telegram_message("Hello")  # Optional: requires Telegram bot integration
-        return "Message sent to Telegram!"
-    except Exception as e:
-        return f"Error: {str(e)}", 500
-
-@app.route('/candles', methods=['GET'])
-def candles():
-    try:
-        return jsonify(get_candles())
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-if __name__ == '__main__':
-    import os
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+                .then(data
