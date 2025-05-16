@@ -4,25 +4,14 @@ import time
 import requests
 from datetime import datetime
 
-# Telegram credentials
-BOT_TOKEN = "7819951392:AAFkYd9-sblexjXNqgIfhbWAIC1Lr6NmPpo"
-CHAT_ID = "6734231237"
+# Firebase config
+FIREBASE_URL = "https://data-364f1-default-rtdb.firebaseio.com/ticks.json"  # <- Replace with your Firebase URL
 
-# Send message to Telegram
-def send_telegram_message(message):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": message}
-    try:
-        response = requests.post(url, data=payload)
-        response.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        print("Telegram error:", e)
-
-# WebSocket event handlers
+# WebSocket handlers
 def on_open(ws):
     print("✅ WebSocket connected.")
     subscribe_message = {
-        "ticks": "R_10",  # Replace with your symbol if needed
+        "ticks": "R_10",  # Replace with your desired symbol
         "subscribe": 1
     }
     ws.send(json.dumps(subscribe_message))
@@ -35,9 +24,19 @@ def on_message(ws, message):
         price = tick["quote"]
         timestamp = tick["epoch"]
         readable_time = datetime.utcfromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
-        msg = f"📈 Tick @ {readable_time} UTC\n💰 Price: {price}"
-        print(msg)
-        send_telegram_message(msg)
+
+        tick_data = {
+            "time": readable_time,
+            "timestamp": timestamp,
+            "price": price
+        }
+
+        print("Sending tick to Firebase:", tick_data)
+        try:
+            response = requests.post(FIREBASE_URL, json=tick_data)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            print("Firebase Error:", e)
 
 def on_error(ws, error):
     print("WebSocket Error:", error)
