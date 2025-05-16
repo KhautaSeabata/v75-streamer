@@ -1,0 +1,6 @@
+Flask
+websocket-client
+pandas
+requests
+plotly
+
