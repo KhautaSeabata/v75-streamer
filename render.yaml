@@ -1,8 +1,16 @@
 services:
-  - type: worker
-    name: telegram-trading-bot
+  - type: web
+    name: signal-dashboard
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python main.py
+    startCommand: python web.py
+    autoDeploy: true
+
+  - type: worker
+    name: analyzer-worker
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python analyze.py
     autoDeploy: true
