@@ -7,10 +7,3 @@ services:
     startCommand: python web.py
     autoDeploy: true
 
-  - type: worker
-    name: analyzer-worker
-    env: python
-    plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: python analyze.py
-    autoDeploy: true
