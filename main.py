@@ -4,12 +4,12 @@ import requests
 from datetime import datetime
 
 # Firebase config (push under V0latility 10)
-FIREBASE_URL = "https://data-364f1-default-rtdb.firebaseio.com/V0latility%2010.json"
+FIREBASE_URL = "https://data-364f1-default-rtdb.firebaseio.com/Vix75.json"
 
 def on_open(ws):
     print("✅ WebSocket connected.")
     subscribe_message = {
-        "ticks": "R_10",  # Your desired symbol
+        "ticks": "R_75",  # Your desired symbol
         "subscribe": 1
     }
     ws.send(json.dumps(subscribe_message))
