@@ -1,12 +1,13 @@
 from flask import Flask, render_template_string, jsonify
-from analyze import get_candles  # This should still return your candle data
+from analyze import get_candles  # Make sure this returns a list of OHLC data
 
 app = Flask(__name__)
 
+HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Data Loading Status</title>
+    <title>Vix25 Candle Data Status</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -36,4 +37,24 @@ app = Flask(__name__)
                     }
                 })
                 .catch(err => {
-                    document.getElementById("status").textContent = "
+                    document.getElementById("status").textContent = "Error loading data ⚠️";
+                });
+        }
+
+        checkDataStatus();
+    </script>
+</body>
+</html>
+"""
+
+@app.route("/")
+def index():
+    return render_template_string(HTML_TEMPLATE)
+
+@app.route("/candles")
+def candles():
+    data = get_candles()
+    return jsonify(data)
+
+if __name__ == "__main__":
+    app.run(debug=True)
