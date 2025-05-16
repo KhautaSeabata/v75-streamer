@@ -3,24 +3,39 @@ import json
 import requests
 from datetime import datetime
 
-# Firebase config (push under V0latility 10)
-FIREBASE_URL = "https://data-364f1-default-rtdb.firebaseio.com/Vix75.json"
+# Firebase base URL (replace with your own database URL if needed)
+FIREBASE_BASE_URL = "https://data-364f1-default-rtdb.firebaseio.com/"
+
+# Map each symbol to its respective Firebase node
+symbol_to_node = {
+    "R_10": "Vix10",
+    "R_25": "Vix25",
+    "R_100": "Vix100",
+    "Volatiliti 10 (1s)": "Vix10s",
+    "Volatility 75 (1s)": "Vix75s"
+}
 
 def on_open(ws):
     print("✅ WebSocket connected.")
-    subscribe_message = {
-        "ticks": "R_75",  # Your desired symbol
-        "subscribe": 1
-    }
-    ws.send(json.dumps(subscribe_message))
+    # Subscribe to each symbol by sending separate subscription requests
+    for symbol in symbol_to_node.keys():
+        subscribe_message = {
+            "ticks": symbol,
+            "subscribe": 1
+        }
+        ws.send(json.dumps(subscribe_message))
+        print(f"Subscribed to {symbol}")
 
 def on_message(ws, message):
     data = json.loads(message)
 
     if "tick" in data:
         tick = data["tick"]
-        price = tick["quote"]
-        timestamp = tick["epoch"]
+        price = tick.get("quote")
+        timestamp = tick.get("epoch")
+        if timestamp is None:
+            # In some messages the tick may not include a timestamp
+            return
         readable_time = datetime.utcfromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
 
         tick_data = {
@@ -29,12 +44,19 @@ def on_message(ws, message):
             "price": price
         }
 
-        print("Sending tick to Firebase:", tick_data)
-        try:
-            response = requests.post(FIREBASE_URL, json=tick_data)
-            response.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            print("Firebase Error:", e)
+        # Identify which symbol this tick is for using the echoed subscription request
+        symbol = data.get("echo_req", {}).get("ticks")
+        if symbol in symbol_to_node:
+            node = symbol_to_node[symbol]
+            firebase_url = f"{FIREBASE_BASE_URL}{node}.json"
+            print(f"Sending tick for {symbol} to Firebase node {node}: {tick_data}")
+            try:
+                response = requests.post(firebase_url, json=tick_data)
+                response.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                print(f"Firebase Error for {symbol}:", e)
+        else:
+            print("Received tick for unknown symbol:", symbol)
 
 def on_error(ws, error):
     print("WebSocket Error:", error)
