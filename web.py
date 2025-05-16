@@ -3,7 +3,6 @@ from analyze import get_candles  # This should still return your candle data
 
 app = Flask(__name__)
 
-HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
