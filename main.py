@@ -1,66 +1,87 @@
 import asyncio
-import httpx
-import time
-from datetime import datetime
 import json
+import datetime
+import firebase_admin
+from firebase_admin import credentials, db
+import websockets
 
-FIREBASE_TICK_URL = "https://data-364f1-default-rtdb.firebaseio.com/Vix25.json"
-FIREBASE_CANDLE_URL = "https://data-364f1-default-rtdb.firebaseio.com/Vix25_1min"
+# Firebase initialization
+cred = credentials.Certificate("serviceAccountKey.json")
+firebase_admin.initialize_app(cred, {
+    'databaseURL': 'https://data-364f1-default-rtdb.firebaseio.com/'
+})
 
-async def fetch_ticks():
-    """Fetch all Vix25 ticks from Firebase."""
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(FIREBASE_TICK_URL)
-        resp.raise_for_status()
-        data = resp.json()
-        if not data:
-            return []
-        return sorted(data.values(), key=lambda x: x["timestamp"])
+# Firebase refs
+candles_ref = db.reference("Vix25/minute_candles")
 
-def group_ticks_by_minute(ticks):
-    """Group tick data into 1-minute buckets."""
-    candles = {}
-    for tick in ticks:
-        ts = int(tick["timestamp"])
-        minute_key = ts - (ts % 60)  # align to minute start
-        price = float(tick["price"])
+# Deriv WS URL
+DERIV_WS_URL = "wss://ws.binaryws.com/websockets/v3?app_id=1089"
 
-        if minute_key not in candles:
-            candles[minute_key] = {
-                "open": price,
-                "high": price,
-                "low": price,
-                "close": price,
-                "timestamp": minute_key
-            }
-        else:
-            candle = candles[minute_key]
-            candle["high"] = max(candle["high"], price)
-            candle["low"] = min(candle["low"], price)
-            candle["close"] = price
+# Keep track of ticks for current minute candle
+current_minute = None
+open_price = None
+high_price = None
+low_price = None
+close_price = None
 
-    return list(candles.values())
+async def subscribe_ticks():
+    global current_minute, open_price, high_price, low_price, close_price
 
-async def store_candles(candles):
-    """Store generated candles in Firebase."""
-    async with httpx.AsyncClient() as client:
-        updates = {str(c["timestamp"]): c for c in candles}
-        resp = await client.patch(f"{FIREBASE_CANDLE_URL}.json", data=json.dumps(updates))
-        resp.raise_for_status()
-        print("Stored", len(candles), "candles")
+    async with websockets.connect(DERIV_WS_URL) as ws:
+        # Subscribe to tick stream for R_25 (Volatility 25)
+        subscribe_msg = {
+            "ticks": "R_25"
+        }
+        await ws.send(json.dumps(subscribe_msg))
 
-async def run():
+        async for message in ws:
+            data = json.loads(message)
+
+            if "tick" in data:
+                tick = data["tick"]
+                tick_time = datetime.datetime.utcfromtimestamp(tick["epoch"]).replace(second=0, microsecond=0)
+                tick_price = float(tick["quote"])
+
+                if current_minute is None:
+                    # First tick received
+                    current_minute = tick_time
+                    open_price = high_price = low_price = close_price = tick_price
+
+                elif tick_time > current_minute:
+                    # New minute - store previous candle
+                    candle_data = {
+                        "timestamp": current_minute.isoformat(),
+                        "open": open_price,
+                        "high": high_price,
+                        "low": low_price,
+                        "close": close_price,
+                    }
+                    print(f"Storing candle: {candle_data}")
+                    candles_ref.push(candle_data)
+
+                    # Reset for new candle
+                    current_minute = tick_time
+                    open_price = high_price = low_price = close_price = tick_price
+
+                else:
+                    # Same minute - update high, low, close
+                    if tick_price > high_price:
+                        high_price = tick_price
+                    if tick_price < low_price:
+                        low_price = tick_price
+                    close_price = tick_price
+
+            elif "error" in data:
+                print("Error from server:", data["error"])
+
+async def main():
     while True:
-        ticks = await fetch_ticks()
-        if not ticks:
-            print("No tick data found.")
-            await asyncio.sleep(10)
-            continue
-
-        candles = group_ticks_by_minute(ticks)
-        await store_candles(candles)
-
-        await asyncio.sleep(60)  # wait 1 minute to process again
+        try:
+            await subscribe_ticks()
+        except Exception as e:
+            print("WebSocket error:", e)
+            print("Reconnecting in 5 seconds...")
+            await asyncio.sleep(5)
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    asyncio.run(main())
