@@ -1,74 +1,67 @@
-import websocket
-import json
-import requests
+import asyncio
+import httpx
+import time
 from datetime import datetime
+import json
 
-# Firebase base URL (replace with your own database URL if needed)
-FIREBASE_BASE_URL = "https://data-364f1-default-rtdb.firebaseio.com/"
+FIREBASE_TICK_URL = "https://data-364f1-default-rtdb.firebaseio.com/Vix25.json"
+FIREBASE_CANDLE_URL = "https://data-364f1-default-rtdb.firebaseio.com/Vix25_1min"
 
-# Map each symbol to its respective Firebase node
-symbol_to_node = {
-    "R_10": "Vix10",
-    "R_25": "Vix25",
-    "R_100": "Vix100",
-    "Volatiliti 10 (1s)": "Vix10s",
-    "Volatility 75 (1s)": "Vix75s"
-}
+async def fetch_ticks():
+    """Fetch all Vix25 ticks from Firebase."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(FIREBASE_TICK_URL)
+        resp.raise_for_status()
+        data = resp.json()
+        if not data:
+            return []
+        return sorted(data.values(), key=lambda x: x["timestamp"])
 
-def on_open(ws):
-    print("✅ WebSocket connected.")
-    # Subscribe to each symbol by sending separate subscription requests
-    for symbol in symbol_to_node.keys():
-        subscribe_message = {
-            "ticks": symbol,
-            "subscribe": 1
-        }
-        ws.send(json.dumps(subscribe_message))
-        print(f"Subscribed to {symbol}")
+def group_ticks_by_minute(ticks):
+    """Group tick data into 1-minute buckets."""
+    candles = {}
+    for tick in ticks:
+        ts = int(tick["timestamp"])
+        minute_key = ts - (ts % 60)  # align to minute start
+        price = float(tick["price"])
 
-def on_message(ws, message):
-    data = json.loads(message)
-
-    if "tick" in data:
-        tick = data["tick"]
-        price = tick.get("quote")
-        timestamp = tick.get("epoch")
-        if timestamp is None:
-            # In some messages the tick may not include a timestamp
-            return
-        readable_time = datetime.utcfromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
-
-        tick_data = {
-            "time": readable_time,
-            "timestamp": timestamp,
-            "price": price
-        }
-
-        # Identify which symbol this tick is for using the echoed subscription request
-        symbol = data.get("echo_req", {}).get("ticks")
-        if symbol in symbol_to_node:
-            node = symbol_to_node[symbol]
-            firebase_url = f"{FIREBASE_BASE_URL}{node}.json"
-            print(f"Sending tick for {symbol} to Firebase node {node}: {tick_data}")
-            try:
-                response = requests.post(firebase_url, json=tick_data)
-                response.raise_for_status()
-            except requests.exceptions.RequestException as e:
-                print(f"Firebase Error for {symbol}:", e)
+        if minute_key not in candles:
+            candles[minute_key] = {
+                "open": price,
+                "high": price,
+                "low": price,
+                "close": price,
+                "timestamp": minute_key
+            }
         else:
-            print("Received tick for unknown symbol:", symbol)
+            candle = candles[minute_key]
+            candle["high"] = max(candle["high"], price)
+            candle["low"] = min(candle["low"], price)
+            candle["close"] = price
 
-def on_error(ws, error):
-    print("WebSocket Error:", error)
+    return list(candles.values())
 
-def on_close(ws, close_status_code, close_msg):
-    print("WebSocket closed.")
+async def store_candles(candles):
+    """Store generated candles in Firebase."""
+    async with httpx.AsyncClient() as client:
+        updates = {str(c["timestamp"]): c for c in candles}
+        resp = await client.patch(f"{FIREBASE_CANDLE_URL}.json", data=json.dumps(updates))
+        resp.raise_for_status()
+        print("Stored", len(candles), "candles")
+
+async def run():
+    while True:
+        ticks = await fetch_ticks()
+        if not ticks:
+            print("No tick data found.")
+            await asyncio.sleep(10)
+            continue
+
+        candles = group_ticks_by_minute(ticks)
+        await store_candles(candles)
+
+        await asyncio.sleep(60)  # wait 1 minute to process again
 
 if __name__ == "__main__":
-    ws_url = "wss://ws.binaryws.com/websockets/v3?app_id=1089"
-    ws = websocket.WebSocketApp(ws_url,
-                                on_open=on_open,
-                                on_message=on_message,
-                                on_error=on_error,
-                                on_close=on_close)
-    ws.run_forever()
+    asyncio.run(run())
+
