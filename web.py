@@ -53,27 +53,22 @@ HTML_TEMPLATE = """
 
         function drawChart(data) {
             const timestamps = data.map(c => c.timestamp);
-            const open = data.map(c => c.open);
-            const high = data.map(c => c.high);
-            const low = data.map(c => c.low);
-            const close = data.map(c => c.close);
+            const closePrices = data.map(c => c.close);
 
             const trace = {
                 x: timestamps,
-                open: open,
-                high: high,
-                low: low,
-                close: close,
-                type: 'candlestick',
-                xaxis: 'x',
-                yaxis: 'y'
+                y: closePrices,
+                type: 'scatter',
+                mode: 'lines+markers',
+                line: { color: 'blue' },
+                marker: { size: 4 }
             };
 
             const layout = {
                 margin: { t: 20 },
-                dragmode: false,
-                xaxis: { type: 'category' },
-                yaxis: { autorange: true }
+                title: 'Close Price Over Time',
+                xaxis: { title: 'Time' },
+                yaxis: { title: 'Close Price', autorange: true }
             };
 
             Plotly.newPlot('chart', [trace], layout, { responsive: true });
@@ -90,13 +85,13 @@ HTML_TEMPLATE = """
                 .catch(err => console.error("Error loading candle data:", err));
         }
 
-        // Load chart every 60 seconds
         loadChart();
         setInterval(loadChart, 60000);
     </script>
 </body>
 </html>
 """
+
 
 @app.route('/')
 def home():
