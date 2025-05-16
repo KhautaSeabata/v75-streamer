@@ -1,5 +1,6 @@
+import os
 from flask import Flask, render_template_string, jsonify
-from analyze import get_candles  # Make sure this returns a list of OHLC data
+from analyze import get_candles
 
 app = Flask(__name__)
 
@@ -57,4 +58,5 @@ def candles():
     return jsonify(data)
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))  # default to 5000 locally
+    app.run(host="0.0.0.0", port=port, debug=True)
