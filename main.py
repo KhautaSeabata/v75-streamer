@@ -6,7 +6,7 @@ import requests
 import time
 from datetime import datetime
 
-FIREBASE_URL = "https://vix75-f6684-default-rtdb.firebaseio.com"
+FIREBASE_URL = "https://company-bdb78-default-rtdb.firebaseio.com"
 DERIV_WS_URL = "wss://ws.derivws.com/websockets/v3?app_id=1089"
 SYMBOL = "R_25"
 
