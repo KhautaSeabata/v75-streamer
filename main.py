@@ -16,7 +16,7 @@ def get_minute(epoch):
     return epoch - (epoch % 60)
 
 def push_ohlc_to_firebase(ohlc):
-    url = f"{FIREBASE_URL}/1minVix25.json"
+    url = f"{FIREBASE_URL}/Vix150_1min.json"
     response = requests.post(url, json=ohlc)
     if response.status_code == 200:
         print("[1MIN OHLC] Pushed:", ohlc)
