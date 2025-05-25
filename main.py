@@ -2,63 +2,119 @@ import asyncio
 import websockets
 import json
 import requests
+import time
 
-# Firebase setup
-FIREBASE_DB_URL = "https://company-bdb78-default-rtdb.firebaseio.com"
-SYMBOL = "R_150"
-MAX_TICKS = 999
-FIREBASE_PATH = f"/ticks/{SYMBOL}/latest.json"
+FIREBASE_URL = "https://company-bdb78-default-rtdb.firebaseio.com"
+DERIV_WS_URL = "wss://ws.derivws.com/websockets/v3?app_id=1089"
+SYMBOL = "R_25"
 
-# Tick buffer
-tick_buffer = []
+ohlc_minute = None
+ohlc_data = {}
+MAX_RECORDS = 999  # keep only latest 999 records
 
-def store_buffer_in_firebase():
-    url = FIREBASE_DB_URL + FIREBASE_PATH
+def get_minute(epoch):
+    return epoch - (epoch % 60)
+
+def push_ohlc_to_firebase(ohlc):
+    url = f"{FIREBASE_URL}/1minVix25.json"
+    response = requests.post(url, json=ohlc)
+    if response.status_code == 200:
+        print("[1MIN OHLC] Pushed:", ohlc)
+    else:
+        print("[1MIN OHLC] Failed to push:", response.text)
+
+def prune_old_ticks():
     try:
-        response = requests.put(url, data=json.dumps(tick_buffer))
-        if response.status_code == 200:
-            print(f"✅ Stored {len(tick_buffer)} ticks.")
+        url = f"{FIREBASE_URL}/ticks/{SYMBOL}.json"
+        response = requests.get(url)
+        data = response.json()
+        if not data:
+            return
+
+        # Sort ticks by epoch (ascending: oldest first)
+        sorted_ticks = sorted(data.items(), key=lambda item: item[1]["epoch"])
+        total = len(sorted_ticks)
+
+        if total <= MAX_RECORDS:
+            return  # nothing to prune
+
+        to_delete_count = total - MAX_RECORDS
+        keys_to_delete = [key for key, _ in sorted_ticks[:to_delete_count]]
+
+        delete_payload = {key: None for key in keys_to_delete}
+
+        # Use PATCH to delete keys by setting them to null
+        patch_url = f"{FIREBASE_URL}/ticks/{SYMBOL}.json"
+        delete_response = requests.patch(patch_url, json=delete_payload)
+        if delete_response.status_code == 200:
+            print(f"[PRUNE] Deleted {to_delete_count} old tick records")
         else:
-            print(f"❌ Failed to store: {response.text}")
+            print("[PRUNE] Failed to delete old ticks:", delete_response.text)
     except Exception as e:
-        print(f"❌ Exception: {e}")
+        print("[PRUNE] Exception during pruning:", e)
 
-def handle_new_tick(tick_time, tick_price):
-    global tick_buffer
-    tick = {
-        "symbol": SYMBOL,
-        "epoch": tick_time,
-        "quote": tick_price
-    }
+async def stream_ticks():
+    global ohlc_minute, ohlc_data
 
-    if len(tick_buffer) >= MAX_TICKS:
-        tick_buffer.pop(0)  # Delete the oldest tick
+    while True:
+        try:
+            async with websockets.connect(DERIV_WS_URL) as ws:
+                await ws.send(json.dumps({
+                    "ticks": SYMBOL,
+                    "subscribe": 1
+                }))
+                print(f"[STARTED] Subscribed to {SYMBOL} ticks...")
 
-    tick_buffer.append(tick)
-    store_buffer_in_firebase()
+                while True:
+                    message = await ws.recv()
+                    data = json.loads(message)
 
-async def deriv_ws():
-    url = "wss://ws.derivws.com/websockets/v3?app_id=1089"
-    async with websockets.connect(url) as websocket:
-        await websocket.send(json.dumps({
-            "ticks": SYMBOL,
-            "subscribe": 1
-        }))
-        print(f"📡 Subscribed to {SYMBOL}")
+                    if "tick" in data:
+                        tick = data["tick"]
+                        epoch = tick["epoch"]
+                        quote = tick["quote"]
+                        tick_data = {
+                            "symbol": tick["symbol"],
+                            "epoch": epoch,
+                            "quote": quote
+                        }
 
-        while True:
-            try:
-                msg = await websocket.recv()
-                data = json.loads(msg)
+                        # Push raw tick to Firebase
+                        tick_url = f"{FIREBASE_URL}/ticks/{SYMBOL}.json"
+                        requests.post(tick_url, json=tick_data)
 
-                if "tick" in data:
-                    tick = data["tick"]
-                    tick_time = tick["epoch"]
-                    tick_price = tick["quote"]
-                    handle_new_tick(tick_time, tick_price)
-            except Exception as e:
-                print(f"⚠️ WebSocket error: {e}")
-                await asyncio.sleep(1)
+                        # Prune old ticks every 50 ticks approx to reduce load
+                        if epoch % 50 == 0:
+                            prune_old_ticks()
+
+                        # OHLC candle logic
+                        minute = get_minute(epoch)
+                        if ohlc_minute is None:
+                            ohlc_minute = minute
+                            ohlc_data = {
+                                "open": quote,
+                                "high": quote,
+                                "low": quote,
+                                "close": quote,
+                                "epoch": minute
+                            }
+                        elif minute == ohlc_minute:
+                            ohlc_data["high"] = max(ohlc_data["high"], quote)
+                            ohlc_data["low"] = min(ohlc_data["low"], quote)
+                            ohlc_data["close"] = quote
+                        else:
+                            push_ohlc_to_firebase(ohlc_data)
+                            ohlc_minute = minute
+                            ohlc_data = {
+                                "open": quote,
+                                "high": quote,
+                                "low": quote,
+                                "close": quote,
+                                "epoch": minute
+                            }
+        except Exception as e:
+            print("[ERROR] Retrying in 5 seconds:", e)
+            time.sleep(5)
 
 if __name__ == "__main__":
-    asyncio.run(deriv_ws())
+    asyncio.run(stream_ticks())
