@@ -6,7 +6,7 @@ import time
 
 FIREBASE_URL = "https://company-bdb78-default-rtdb.firebaseio.com"
 DERIV_WS_URL = "wss://ws.derivws.com/websockets/v3?app_id=1089"
-SYMBOL = "R_150"
+SYMBOL = "R_150_1s"
 
 ohlc_minute = None
 ohlc_data = {}
