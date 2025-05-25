@@ -6,22 +6,24 @@ import time
 
 FIREBASE_URL = "https://company-bdb78-default-rtdb.firebaseio.com"
 DERIV_WS_URL = "wss://ws.derivws.com/websockets/v3?app_id=1089"
-SYMBOL = "R_25"
+SYMBOL = "R_150"  # Volatility 150 (1s)
 
-ohlc_minute = None
-ohlc_data = {}
+ohlc_1min = None
+ohlc_5min = None
+ohlc_data_1min = {}
+ohlc_data_5min = {}
 MAX_RECORDS = 999  # keep only latest 999 records
 
-def get_minute(epoch):
-    return epoch - (epoch % 60)
+def get_minute(epoch, interval=60):
+    return epoch - (epoch % interval)
 
-def push_ohlc_to_firebase(ohlc):
-    url = f"{FIREBASE_URL}/1minVix25.json"
+def push_ohlc_to_firebase(path, ohlc):
+    url = f"{FIREBASE_URL}/{path}.json"
     response = requests.post(url, json=ohlc)
     if response.status_code == 200:
-        print("[1MIN OHLC] Pushed:", ohlc)
+        print(f"[{path.upper()}] Pushed:", ohlc)
     else:
-        print("[1MIN OHLC] Failed to push:", response.text)
+        print(f"[{path.upper()}] Failed to push:", response.text)
 
 def prune_old_ticks():
     try:
@@ -31,19 +33,16 @@ def prune_old_ticks():
         if not data:
             return
 
-        # Sort ticks by epoch (ascending: oldest first)
         sorted_ticks = sorted(data.items(), key=lambda item: item[1]["epoch"])
         total = len(sorted_ticks)
 
         if total <= MAX_RECORDS:
-            return  # nothing to prune
+            return
 
         to_delete_count = total - MAX_RECORDS
         keys_to_delete = [key for key, _ in sorted_ticks[:to_delete_count]]
-
         delete_payload = {key: None for key in keys_to_delete}
 
-        # Use PATCH to delete keys by setting them to null
         patch_url = f"{FIREBASE_URL}/ticks/{SYMBOL}.json"
         delete_response = requests.patch(patch_url, json=delete_payload)
         if delete_response.status_code == 200:
@@ -54,7 +53,7 @@ def prune_old_ticks():
         print("[PRUNE] Exception during pruning:", e)
 
 async def stream_ticks():
-    global ohlc_minute, ohlc_data
+    global ohlc_1min, ohlc_5min, ohlc_data_1min, ohlc_data_5min
 
     while True:
         try:
@@ -83,35 +82,62 @@ async def stream_ticks():
                         tick_url = f"{FIREBASE_URL}/ticks/{SYMBOL}.json"
                         requests.post(tick_url, json=tick_data)
 
-                        # Prune old ticks every 50 ticks approx to reduce load
+                        # Prune periodically
                         if epoch % 50 == 0:
                             prune_old_ticks()
 
-                        # OHLC candle logic
-                        minute = get_minute(epoch)
-                        if ohlc_minute is None:
-                            ohlc_minute = minute
-                            ohlc_data = {
+                        # 1-minute OHLC logic
+                        minute_1 = get_minute(epoch, 60)
+                        if ohlc_1min is None:
+                            ohlc_1min = minute_1
+                            ohlc_data_1min = {
                                 "open": quote,
                                 "high": quote,
                                 "low": quote,
                                 "close": quote,
-                                "epoch": minute
+                                "epoch": minute_1
                             }
-                        elif minute == ohlc_minute:
-                            ohlc_data["high"] = max(ohlc_data["high"], quote)
-                            ohlc_data["low"] = min(ohlc_data["low"], quote)
-                            ohlc_data["close"] = quote
+                        elif minute_1 == ohlc_1min:
+                            ohlc_data_1min["high"] = max(ohlc_data_1min["high"], quote)
+                            ohlc_data_1min["low"] = min(ohlc_data_1min["low"], quote)
+                            ohlc_data_1min["close"] = quote
                         else:
-                            push_ohlc_to_firebase(ohlc_data)
-                            ohlc_minute = minute
-                            ohlc_data = {
+                            push_ohlc_to_firebase("1minVix150_1s", ohlc_data_1min)
+                            ohlc_1min = minute_1
+                            ohlc_data_1min = {
                                 "open": quote,
                                 "high": quote,
                                 "low": quote,
                                 "close": quote,
-                                "epoch": minute
+                                "epoch": minute_1
                             }
+
+                        # 5-minute OHLC logic
+                        minute_5 = get_minute(epoch, 300)
+                        if ohlc_5min is None:
+                            ohlc_5min = minute_5
+                            ohlc_data_5min = {
+                                "open": quote,
+                                "high": quote,
+                                "low": quote,
+                                "close": quote,
+                                "epoch": minute_5
+                            }
+                        elif minute_5 == ohlc_5min:
+                            ohlc_data_5min["high"] = max(ohlc_data_5min["high"], quote)
+                            ohlc_data_5min["low"] = min(ohlc_data_5min["low"], quote)
+                            ohlc_data_5min["close"] = quote
+                        else:
+                            push_ohlc_to_firebase("5minVix150_1s", ohlc_data_5min)
+                            ohlc_5min = minute_5
+                            ohlc_data_5min = {
+                                "open": quote,
+                                "high": quote,
+                                "low": quote,
+                                "close": quote,
+                                "epoch": minute_5
+                            }
+
         except Exception as e:
             print("[ERROR] Retrying in 5 seconds:", e)
             time.sleep(5)
