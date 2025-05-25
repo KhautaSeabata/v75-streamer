@@ -65,7 +65,7 @@ HTML = """
 
 @app.route("/")
 def home():
-    return render_template_string(HTML, symbol="R_150")
+    return render_template_string(HTML, symbol="R_25")
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
