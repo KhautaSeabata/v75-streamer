@@ -1,9 +1,7 @@
-# web.py
-from flask import Flask, render_template_string, send_from_directory
+from flask import Flask, render_template_string
 
 app = Flask(__name__)
 
-# Home Page HTML (static)
 HTML = """
 <!DOCTYPE html>
 <html>
@@ -49,6 +47,21 @@ HTML = """
             font-size: 18px;
             color: #bbbbbb;
         }
+        .btn {
+            margin-top: 40px;
+            background-color: #00e676;
+            color: #121212;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: background-color 0.3s;
+            text-decoration: none;
+        }
+        .btn:hover {
+            background-color: #00c960;
+        }
     </style>
 </head>
 <body>
@@ -60,6 +73,8 @@ HTML = """
         <img class="arrow" src="https://img.icons8.com/ios-filled/50/00e676/right.png" alt="Arrow" />
         <img class="symbol" src="https://img.icons8.com/fluency/96/bar-chart.png" alt="Ticks" />
     </div>
+
+    <a class="btn" href="https://v75-streamer.onrender.com/candles" target="_blank">📊 View Candlestick Chart</a>
 </body>
 </html>
 """
@@ -67,14 +82,6 @@ HTML = """
 @app.route("/")
 def home():
     return render_template_string(HTML, symbol="R_25")
-
-@app.route("/candles")
-def candles():
-    return send_from_directory(".", "candles.html")
-
-@app.route("/candles.js")
-def candles_js():
-    return send_from_directory(".", "candles.js")
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
