@@ -1,7 +1,9 @@
-from flask import Flask, render_template_string
+# web.py
+from flask import Flask, render_template_string, send_file
 
 app = Flask(__name__)
 
+# Home Page HTML (static)
 HTML = """
 <!DOCTYPE html>
 <html>
@@ -47,20 +49,23 @@ HTML = """
             font-size: 18px;
             color: #bbbbbb;
         }
+        /* New button style */
         .btn {
             margin-top: 40px;
+            padding: 15px 40px;
+            font-size: 18px;
             background-color: #00e676;
-            color: #121212;
             border: none;
-            padding: 12px 24px;
-            font-size: 16px;
+            border-radius: 8px;
             cursor: pointer;
-            border-radius: 6px;
-            transition: background-color 0.3s;
+            color: #121212;
+            font-weight: bold;
+            transition: background-color 0.3s ease;
             text-decoration: none;
+            display: inline-block;
         }
         .btn:hover {
-            background-color: #00c960;
+            background-color: #00c853;
         }
     </style>
 </head>
@@ -74,7 +79,7 @@ HTML = """
         <img class="symbol" src="https://img.icons8.com/fluency/96/bar-chart.png" alt="Ticks" />
     </div>
 
-    <a class="btn" href="https://v75-streamer.onrender.com/candles" target="_blank">📊 View Candlestick Chart</a>
+    <a href="/candles" class="btn">View Candlestick & Live Tick Charts</a>
 </body>
 </html>
 """
@@ -82,6 +87,12 @@ HTML = """
 @app.route("/")
 def home():
     return render_template_string(HTML, symbol="R_25")
+
+
+@app.route("/candles")
+def candles():
+    return send_file("candles.html")
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
