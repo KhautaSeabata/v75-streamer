@@ -76,7 +76,7 @@ CANDLES_HTML = """
         async function fetchTicks() {
             const res = await fetch("https://fir-8908c-default-rtdb.firebaseio.com/ticks/R_25.json");
             const data = await res.json();
-            const ticks = Object.values(data || {}).slice(-600);
+            const ticks = Object.values(data || {}).slice(-900);
 
             tickChart.data.labels = ticks.map(t => new Date(t.epoch * 1000).toLocaleTimeString());
             tickChart.data.datasets[0].data = ticks.map(t => t.quote);
