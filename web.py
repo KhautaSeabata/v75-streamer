@@ -4,7 +4,7 @@ import os
 
 app = Flask(__name__)
 
-FIREBASE_URL = "https://vix75-f6684-default-rtdb.firebaseio.com"  # update your Firebase URL
+FIREBASE_URL = "https://fir-8908c-default-rtdb.firebaseio.com"  # update your Firebase URL
 SYMBOL = "R_25"
 
 HOME_HTML = """
