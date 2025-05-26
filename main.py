@@ -10,18 +10,26 @@ SYMBOL = "R_25"
 
 ohlc_minute = None
 ohlc_data = {}
+
+ohlc_5min_minute = None
+ohlc_5min_data = {}
+
 MAX_RECORDS = 999  # keep only latest 999 records
+
 
 def get_minute(epoch):
     return epoch - (epoch % 60)
 
-def push_ohlc_to_firebase(ohlc):
-    url = f"{FIREBASE_URL}/1minVix25.json"
+def get_5min_start(epoch):
+    return epoch - (epoch % 300)
+
+def push_ohlc_to_firebase(ohlc, timeframe):
+    url = f"{FIREBASE_URL}/{timeframe}Vix25.json"
     response = requests.post(url, json=ohlc)
     if response.status_code == 200:
-        print("[1MIN OHLC] Pushed:", ohlc)
+        print(f"[{timeframe.upper()} OHLC] Pushed:", ohlc)
     else:
-        print("[1MIN OHLC] Failed to push:", response.text)
+        print(f"[{timeframe.upper()} OHLC] Failed to push:", response.text)
 
 def prune_old_ticks():
     try:
@@ -31,19 +39,16 @@ def prune_old_ticks():
         if not data:
             return
 
-        # Sort ticks by epoch (ascending: oldest first)
         sorted_ticks = sorted(data.items(), key=lambda item: item[1]["epoch"])
         total = len(sorted_ticks)
 
         if total <= MAX_RECORDS:
-            return  # nothing to prune
+            return
 
         to_delete_count = total - MAX_RECORDS
         keys_to_delete = [key for key, _ in sorted_ticks[:to_delete_count]]
-
         delete_payload = {key: None for key in keys_to_delete}
 
-        # Use PATCH to delete keys by setting them to null
         patch_url = f"{FIREBASE_URL}/ticks/{SYMBOL}.json"
         delete_response = requests.patch(patch_url, json=delete_payload)
         if delete_response.status_code == 200:
@@ -54,7 +59,7 @@ def prune_old_ticks():
         print("[PRUNE] Exception during pruning:", e)
 
 async def stream_ticks():
-    global ohlc_minute, ohlc_data
+    global ohlc_minute, ohlc_data, ohlc_5min_minute, ohlc_5min_data
 
     while True:
         try:
@@ -83,11 +88,11 @@ async def stream_ticks():
                         tick_url = f"{FIREBASE_URL}/ticks/{SYMBOL}.json"
                         requests.post(tick_url, json=tick_data)
 
-                        # Prune old ticks every 50 ticks approx to reduce load
+                        # Prune every 50 ticks approx
                         if epoch % 50 == 0:
                             prune_old_ticks()
 
-                        # OHLC candle logic
+                        # --- 1MIN OHLC Logic ---
                         minute = get_minute(epoch)
                         if ohlc_minute is None:
                             ohlc_minute = minute
@@ -103,7 +108,7 @@ async def stream_ticks():
                             ohlc_data["low"] = min(ohlc_data["low"], quote)
                             ohlc_data["close"] = quote
                         else:
-                            push_ohlc_to_firebase(ohlc_data)
+                            push_ohlc_to_firebase(ohlc_data, "1min")
                             ohlc_minute = minute
                             ohlc_data = {
                                 "open": quote,
@@ -112,6 +117,33 @@ async def stream_ticks():
                                 "close": quote,
                                 "epoch": minute
                             }
+
+                        # --- 5MIN OHLC Logic ---
+                        m5 = get_5min_start(epoch)
+                        if ohlc_5min_minute is None:
+                            ohlc_5min_minute = m5
+                            ohlc_5min_data = {
+                                "open": quote,
+                                "high": quote,
+                                "low": quote,
+                                "close": quote,
+                                "epoch": m5
+                            }
+                        elif m5 == ohlc_5min_minute:
+                            ohlc_5min_data["high"] = max(ohlc_5min_data["high"], quote)
+                            ohlc_5min_data["low"] = min(ohlc_5min_data["low"], quote)
+                            ohlc_5min_data["close"] = quote
+                        else:
+                            push_ohlc_to_firebase(ohlc_5min_data, "5min")
+                            ohlc_5min_minute = m5
+                            ohlc_5min_data = {
+                                "open": quote,
+                                "high": quote,
+                                "low": quote,
+                                "close": quote,
+                                "epoch": m5
+                            }
+
         except Exception as e:
             print("[ERROR] Retrying in 5 seconds:", e)
             time.sleep(5)
