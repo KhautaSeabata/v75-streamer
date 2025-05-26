@@ -1,31 +1,117 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Candlestick Chart</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
-    <script src="/candles.js"></script>
-    <style>
-        body {
-            background-color: #111;
-            color: white;
-            font-family: Arial, sans-serif;
-            text-align: center;
-            padding: 20px;
-        }
-        canvas {
-            background: #222;
-            margin: auto;
-            display: block;
-            border-radius: 10px;
-        }
-        h2 {
-            color: #00e676;
-        }
-    </style>
+  <title>Candlestick Chart + Live Ticks</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+  <style>
+    body {
+      background-color: #121212;
+      color: white;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
+    canvas {
+      background-color: #1e1e1e;
+      border-radius: 8px;
+      margin-bottom: 30px;
+    }
+    h2 {
+      color: #00e676;
+    }
+  </style>
 </head>
 <body>
-    <h2>📊 VIX 25 Candlestick Chart (1min)</h2>
-    <canvas id="candlestickChart" width="1000" height="400"></canvas>
+  <h2>📊 VIX25 1-Min Candles</h2>
+  <canvas id="candleChart" width="1000" height="400"></canvas>
+
+  <h2>⚡ Live Tick Line Chart</h2>
+  <canvas id="lineChart" width="1000" height="200"></canvas>
+
+  <script>
+    // Firebase config
+    const firebaseConfig = {
+      databaseURL: "https://fir-8908c-default-rtdb.firebaseio.com"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // Candlestick Chart Setup
+    const ctxCandle = document.getElementById('candleChart').getContext('2d');
+    const candleChart = new Chart(ctxCandle, {
+      type: 'candlestick',
+      data: {
+        datasets: [{
+          label: '1-min OHLC',
+          data: [],
+          borderColor: '#00e676',
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: { ticks: { color: 'white' } },
+          y: { ticks: { color: 'white' } }
+        }
+      }
+    });
+
+    // Load 1-min candles
+    db.ref('1minVix25').limitToLast(100).on('child_added', snapshot => {
+      const d = snapshot.val();
+      const candle = {
+        x: new Date(d.epoch * 1000),
+        o: d.open,
+        h: d.high,
+        l: d.low,
+        c: d.close
+      };
+      candleChart.data.datasets[0].data.push(candle);
+      candleChart.update();
+    });
+
+    // Line Chart for live ticks
+    const ctxLine = document.getElementById('lineChart').getContext('2d');
+    const lineChart = new Chart(ctxLine, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Live Ticks',
+          data: [],
+          borderColor: '#00b0ff',
+          fill: false,
+          tension: 0.1
+        }]
+      },
+      options: {
+        responsive: true,
+        animation: false,
+        scales: {
+          x: { ticks: { color: 'white' } },
+          y: { ticks: { color: 'white' } }
+        }
+      }
+    });
+
+    // Listen for live ticks
+    db.ref('ticks/R_25').limitToLast(50).on('child_added', snapshot => {
+      const tick = snapshot.val();
+      const time = new Date(tick.epoch * 1000).toLocaleTimeString();
+
+      lineChart.data.labels.push(time);
+      lineChart.data.datasets[0].data.push(tick.quote);
+
+      if (lineChart.data.labels.length > 50) {
+        lineChart.data.labels.shift();
+        lineChart.data.datasets[0].data.shift();
+      }
+
+      lineChart.update();
+    });
+  </script>
 </body>
 </html>
