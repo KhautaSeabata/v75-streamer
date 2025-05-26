@@ -1,92 +1,123 @@
-from flask import Flask, render_template_string, jsonify
+from flask import Flask, render_template_string
 import requests
 
 app = Flask(__name__)
 
-FIREBASE_URL = "https://fir-8908c-default-rtdb.firebaseio.com"
-SYMBOL = "R_25"
-
-HTML = """
+# HTML page for live chart with trendline overlay
+CANDLES_HTML = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Live Tick Chart</title>
+    <title>Live Tick Chart with Trendlines</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
             background: #121212;
             color: white;
-            font-family: Arial, sans-serif;
+            font-family: Arial;
             text-align: center;
-            padding: 20px;
         }
         canvas {
-            background: #1e1e1e;
-            border-radius: 8px;
-        }
-        h2 {
-            color: #00e676;
+            margin-top: 20px;
+            background-color: #1e1e1e;
         }
     </style>
 </head>
 <body>
-    <h2>Live Tick Chart (Last 600)</h2>
-    <canvas id="lineChart" width="900" height="400"></canvas>
+    <h2>📉 Live Tick Chart with Channel Detection</h2>
+    <canvas id="tickChart" width="1000" height="400"></canvas>
 
     <script>
-        const ctx = document.getElementById('lineChart').getContext('2d');
-        const chart = new Chart(ctx, {
+        const ctx = document.getElementById('tickChart').getContext('2d');
+        const tickData = {
+            labels: [],
+            datasets: [{
+                label: 'R_25 Ticks',
+                data: [],
+                borderColor: 'lime',
+                backgroundColor: 'transparent',
+                tension: 0.2,
+                pointRadius: 0,
+            }]
+        };
+
+        const trendlineDatasetTemplate = (label, color) => ({
+            label: label,
+            data: [],
+            borderColor: color,
+            borderDash: [5, 5],
+            fill: false,
+            pointRadius: 0,
+            tension: 0,
+        });
+
+        const config = {
             type: 'line',
-            data: {
-                labels: [],
-                datasets: [{
-                    label: 'Quote',
-                    data: [],
-                    borderColor: '#00e676',
-                    backgroundColor: 'rgba(0,230,118,0.1)',
-                    fill: true,
-                    tension: 0.3,
-                    pointRadius: 0
-                }]
-            },
+            data: tickData,
             options: {
-                responsive: true,
                 animation: false,
                 scales: {
                     x: {
-                        ticks: { color: 'white' },
-                        grid: { color: '#333' }
+                        ticks: { color: 'white' }
                     },
                     y: {
-                        ticks: { color: 'white' },
-                        grid: { color: '#333' }
+                        ticks: { color: 'white' }
                     }
                 },
                 plugins: {
-                    legend: { labels: { color: 'white' } }
+                    legend: { labels: { color: 'white' }}
                 }
             }
-        });
+        };
 
+        const tickChart = new Chart(ctx, config);
+
+        // Fetch ticks every second
         async function fetchTicks() {
-            try {
-                const res = await fetch('/ticks');
-                const ticks = await res.json();
+            const res = await fetch("https://fir-8908c-default-rtdb.firebaseio.com/ticks/R_25.json");
+            const data = await res.json();
+            const ticks = Object.values(data || {}).slice(-600);
 
-                const labels = ticks.map(t => new Date(t.epoch * 1000).toLocaleTimeString());
-                const data = ticks.map(t => t.quote);
-
-                chart.data.labels = labels;
-                chart.data.datasets[0].data = data;
-                chart.update();
-            } catch (e) {
-                console.error("Failed to load ticks:", e);
-            }
+            tickChart.data.labels = ticks.map(t => new Date(t.epoch * 1000).toLocaleTimeString());
+            tickChart.data.datasets[0].data = ticks.map(t => t.quote);
+            tickChart.update();
         }
 
-        // Load ticks every second
+        // Fetch and overlay trendlines
+        async function fetchTrendlines() {
+            const res = await fetch("https://fir-8908c-default-rtdb.firebaseio.com/analysis/R_25.json");
+            const data = await res.json();
+
+            // Remove old trendline datasets
+            tickChart.data.datasets = tickChart.data.datasets.slice(0, 1);
+
+            if (!data) return;
+
+            for (const channel of data) {
+                const { type, upper, lower } = channel;
+                if (!upper || !lower) continue;
+
+                const color = type === "up" ? "blue" : type === "down" ? "red" : "white";
+
+                const upperLine = trendlineDatasetTemplate(`${type.toUpperCase()} Upper`, color);
+                const lowerLine = trendlineDatasetTemplate(`${type.toUpperCase()} Lower`, color);
+
+                upperLine.data = upper.map(p => ({ x: new Date(p[0] * 1000).toLocaleTimeString(), y: p[1] }));
+                lowerLine.data = lower.map(p => ({ x: new Date(p[0] * 1000).toLocaleTimeString(), y: p[1] }));
+
+                tickChart.data.datasets.push(upperLine, lowerLine);
+            }
+
+            tickChart.update();
+        }
+
+        setInterval(() => {
+            fetchTicks();
+            fetchTrendlines();
+        }, 1000);
+
         fetchTicks();
-        setInterval(fetchTicks, 1000);
+        fetchTrendlines();
     </script>
 </body>
 </html>
@@ -94,21 +125,24 @@ HTML = """
 
 @app.route("/")
 def home():
-    return render_template_string(HTML)
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head><title>Tick Stream Dashboard</title></head>
+    <body style="text-align:center;font-family:Arial;background:#121212;color:white;padding:50px;">
+        <h1>📡 Streaming Deriv Tick Data for <b>R_25</b> to Firebase</h1>
+        <a href="/candles">
+            <button style="margin-top:20px;padding:12px 20px;font-size:16px;background:#00e676;border:none;color:white;border-radius:5px;">
+                🔍 View Chart
+            </button>
+        </a>
+    </body>
+    </html>
+    """
 
-@app.route("/ticks")
-def get_ticks():
-    try:
-        url = f"{FIREBASE_URL}/ticks/{SYMBOL}.json"
-        res = requests.get(url)
-        data = res.json() or {}
-
-        ticks = [{"epoch": v["epoch"], "quote": v["quote"]} for v in data.values()]
-        ticks.sort(key=lambda x: x["epoch"])
-
-        return jsonify(ticks[-600:])  # Latest 600 ticks
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+@app.route("/candles")
+def candles():
+    return render_template_string(CANDLES_HTML)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
