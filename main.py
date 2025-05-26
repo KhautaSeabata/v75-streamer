@@ -5,7 +5,7 @@ import aiohttp
 import time
 
 FIREBASE_DB_URL = "https://fir-8908c-default-rtdb.firebaseio.com"
-FIREBASE_PATH = "/ticks/R_150_1HZ"
+FIREBASE_PATH = "/ticks/R_75"
 
 async def send_tick_to_firebase(session, tick):
     epoch = tick['epoch']
@@ -21,7 +21,7 @@ async def deriv_websocket():
     url = "wss://ws.derivws.com/websockets/v3?app_id=1089"
     async with websockets.connect(url) as websocket, aiohttp.ClientSession() as session:
         subscribe_msg = {
-            "ticks": "R_150_1HZ",
+            "ticks": "R_75",
             "subscribe": 1
         }
         await websocket.send(json.dumps(subscribe_msg))
