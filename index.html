@@ -1,0 +1,251 @@
+from flask import Flask, Response
+
+app = Flask(__name__)
+
+HTML = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stacked Live Charts: Tick + 1m & 5m Candles</title>
+  <style>
+    body {
+      margin: 0; padding: 0; font-family: Arial, sans-serif;
+      background: #121212; color: #eee;
+      display: flex; flex-direction: column; align-items: center;
+    }
+    h2 {
+      margin: 10px 0 5px 0; font-weight: normal;
+    }
+    .chart-container {
+      width: 90vw;
+      max-width: 900px;
+      margin: 10px 0;
+      background: #1e1e1e;
+      padding: 8px;
+      border-radius: 6px;
+    }
+    canvas {
+      /* Keep height fixed but width responsive */
+      width: 100% !important;
+      height: 250px !important;
+    }
+  </style>
+</head>
+<body>
+  <h2>Live Tick Chart (Line)</h2>
+  <div class="chart-container">
+    <canvas id="tickChart"></canvas>
+  </div>
+
+  <h2>1-Minute Candlestick Chart</h2>
+  <div class="chart-container">
+    <canvas id="oneMinChart"></canvas>
+  </div>
+
+  <h2>5-Minute Candlestick Chart</h2>
+  <div class="chart-container">
+    <canvas id="fiveMinChart"></canvas>
+  </div>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+  <!-- Chart.js + financial plugin -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@3.7.0/dist/chartjs-chart-financial.min.js"></script>
+
+  <script>
+    // --- Initialize Firebase ---
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+      databaseURL: "https://vix75-f6684-default-rtdb.firebaseio.com/",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: "SENDER_ID",
+      appId: "APP_ID"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    function epochToDate(epoch) {
+      return new Date(epoch * 1000);
+    }
+
+    const tickCtx = document.getElementById('tickChart').getContext('2d');
+    const tickChart = new Chart(tickCtx, {
+      type: 'line',
+      data: {
+        datasets: [{
+          label: 'Tick Price',
+          borderColor: 'lime',
+          backgroundColor: 'rgba(0,255,0,0.1)',
+          data: [],
+          pointRadius: 0,
+          borderWidth: 1.5,
+          cubicInterpolationMode: 'monotone',
+          tension: 0.3,
+        }]
+      },
+      options: {
+        animation: false,
+        scales: {
+          x: {
+            type: 'time',
+            time: { tooltipFormat: 'MMM d, HH:mm:ss' },
+            ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 }
+          },
+          y: {
+            title: { display: true, text: 'Price' },
+            beginAtZero: false,
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: { mode: 'nearest', intersect: false }
+        },
+        maintainAspectRatio: false,
+      }
+    });
+
+    const oneMinCtx = document.getElementById('oneMinChart').getContext('2d');
+    const oneMinChart = new Chart(oneMinCtx, {
+      type: 'candlestick',
+      data: {
+        datasets: [{
+          label: '1-min OHLC',
+          data: [],
+          borderColor: '#1e90ff',
+          borderWidth: 1,
+          color: {
+            up: '#26a69a',
+            down: '#ef5350',
+            unchanged: '#999',
+          }
+        }]
+      },
+      options: {
+        animation: false,
+        scales: {
+          x: {
+            type: 'time',
+            time: { tooltipFormat: 'MMM d, HH:mm' },
+            ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 }
+          },
+          y: {
+            title: { display: true, text: 'Price' },
+            beginAtZero: false,
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: { mode: 'nearest', intersect: false }
+        },
+        maintainAspectRatio: false,
+      }
+    });
+
+    const fiveMinCtx = document.getElementById('fiveMinChart').getContext('2d');
+    const fiveMinChart = new Chart(fiveMinCtx, {
+      type: 'candlestick',
+      data: {
+        datasets: [{
+          label: '5-min OHLC',
+          data: [],
+          borderColor: '#ffa500',
+          borderWidth: 1,
+          color: {
+            up: '#4caf50',
+            down: '#f44336',
+            unchanged: '#999',
+          }
+        }]
+      },
+      options: {
+        animation: false,
+        scales: {
+          x: {
+            type: 'time',
+            time: { tooltipFormat: 'MMM d, HH:mm' },
+            ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 }
+          },
+          y: {
+            title: { display: true, text: 'Price' },
+            beginAtZero: false,
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: { mode: 'nearest', intersect: false }
+        },
+        maintainAspectRatio: false,
+      }
+    });
+
+    let tickData = [];
+    let oneMinData = [];
+    let fiveMinData = [];
+
+    const MAX_TICK_POINTS = 200;
+    const MAX_CANDLE_POINTS = 100;
+
+    const ticksRef = db.ref('/ticks/R_25');
+    ticksRef.limitToLast(MAX_TICK_POINTS).on('child_added', (snapshot) => {
+      const tick = snapshot.val();
+      if (tick && tick.epoch && tick.quote) {
+        const time = epochToDate(tick.epoch);
+        const price = tick.quote;
+        tickData.push({ x: time, y: price });
+        if (tickData.length > MAX_TICK_POINTS) tickData.shift();
+        tickChart.data.datasets[0].data = tickData;
+        tickChart.update('none');
+      }
+    });
+
+    const oneMinRef = db.ref('/1minVix25');
+    oneMinRef.limitToLast(MAX_CANDLE_POINTS).on('child_added', (snapshot) => {
+      const candle = snapshot.val();
+      if (candle && candle.epoch && candle.open && candle.high && candle.low && candle.close) {
+        const time = epochToDate(candle.epoch);
+        oneMinData.push({
+          x: time,
+          o: candle.open,
+          h: candle.high,
+          l: candle.low,
+          c: candle.close
+        });
+        if (oneMinData.length > MAX_CANDLE_POINTS) oneMinData.shift();
+        oneMinChart.data.datasets[0].data = oneMinData;
+        oneMinChart.update('none');
+      }
+    });
+
+    const fiveMinRef = db.ref('/5minVix25');
+    fiveMinRef.limitToLast(MAX_CANDLE_POINTS).on('child_added', (snapshot) => {
+      const candle = snapshot.val();
+      if (candle && candle.epoch && candle.open && candle.high && candle.low && candle.close) {
+        const time = epochToDate(candle.epoch);
+        fiveMinData.push({
+          x: time,
+          o: candle.open,
+          h: candle.high,
+          l: candle.low,
+          c: candle.close
+        });
+        if (fiveMinData.length > MAX_CANDLE_POINTS) fiveMinData.shift();
+        fiveMinChart.data.datasets[0].data = fiveMinData;
+        fiveMinChart.update('none');
+      }
+    });
+  </script>
+</body>
+</html>'''
+
+@app.route('/')
+def home():
+    return Response(HTML, mimetype='text/html')
+
+if __name__ == '__main__':
+    app.run(debug=True)
