@@ -1,6 +1,6 @@
 import requests
 
-FIREBASE = "https://fir-8908c-default-rtdb.firebaseio.com"
+FIREBASE = "https://vix25-486b9-default-rtdb.firebaseio.com"
 
 def fetch_ticks():
     r = requests.get(f"{FIREBASE}/ticks/R_25.json")
