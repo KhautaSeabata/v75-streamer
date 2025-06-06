@@ -1,8 +1,4 @@
-from flask import Flask, Response
-
-app = Flask(__name__)
-
-HTML = '''<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -26,7 +22,6 @@ HTML = '''<!DOCTYPE html>
       border-radius: 6px;
     }
     canvas {
-      /* Keep height fixed but width responsive */
       width: 100% !important;
       height: 250px !important;
     }
@@ -58,6 +53,7 @@ HTML = '''<!DOCTYPE html>
 
   <script>
     // --- Initialize Firebase ---
+    // REPLACE with your actual Firebase config from Firebase console
     const firebaseConfig = {
       apiKey: "YOUR_API_KEY",
       authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
@@ -70,10 +66,14 @@ HTML = '''<!DOCTYPE html>
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
+    // --- Utility function to convert epoch to JS Date ---
     function epochToDate(epoch) {
       return new Date(epoch * 1000);
     }
 
+    // --- Setup Chart.js charts ---
+
+    // 1) Live Tick Chart (Line)
     const tickCtx = document.getElementById('tickChart').getContext('2d');
     const tickChart = new Chart(tickCtx, {
       type: 'line',
@@ -110,6 +110,7 @@ HTML = '''<!DOCTYPE html>
       }
     });
 
+    // 2) 1-Minute Candlestick Chart
     const oneMinCtx = document.getElementById('oneMinChart').getContext('2d');
     const oneMinChart = new Chart(oneMinCtx, {
       type: 'candlestick',
@@ -147,6 +148,7 @@ HTML = '''<!DOCTYPE html>
       }
     });
 
+    // 3) 5-Minute Candlestick Chart
     const fiveMinCtx = document.getElementById('fiveMinChart').getContext('2d');
     const fiveMinChart = new Chart(fiveMinCtx, {
       type: 'candlestick',
@@ -184,13 +186,18 @@ HTML = '''<!DOCTYPE html>
       }
     });
 
+    // --- Data arrays ---
     let tickData = [];
     let oneMinData = [];
     let fiveMinData = [];
 
-    const MAX_TICK_POINTS = 200;
-    const MAX_CANDLE_POINTS = 100;
+    // --- Max points to keep for performance ---
+    const MAX_TICK_POINTS = 200;      // last 200 ticks, live updating allowed
+    const MAX_CANDLE_POINTS = 5;      // show only latest 5 candles and stop
 
+    // --- Firebase listeners ---
+
+    // 1) Live ticks: /ticks/R_25
     const ticksRef = db.ref('/ticks/R_25');
     ticksRef.limitToLast(MAX_TICK_POINTS).on('child_added', (snapshot) => {
       const tick = snapshot.val();
@@ -198,14 +205,20 @@ HTML = '''<!DOCTYPE html>
         const time = epochToDate(tick.epoch);
         const price = tick.quote;
         tickData.push({ x: time, y: price });
+
         if (tickData.length > MAX_TICK_POINTS) tickData.shift();
         tickChart.data.datasets[0].data = tickData;
         tickChart.update('none');
       }
     });
 
+    // 2) 1-min candles: /1minVix25
     const oneMinRef = db.ref('/1minVix25');
+    let oneMinListenerActive = true;
+
     oneMinRef.limitToLast(MAX_CANDLE_POINTS).on('child_added', (snapshot) => {
+      if (!oneMinListenerActive) return;
+
       const candle = snapshot.val();
       if (candle && candle.epoch && candle.open && candle.high && candle.low && candle.close) {
         const time = epochToDate(candle.epoch);
@@ -216,14 +229,23 @@ HTML = '''<!DOCTYPE html>
           l: candle.low,
           c: candle.close
         });
-        if (oneMinData.length > MAX_CANDLE_POINTS) oneMinData.shift();
+
+        if (oneMinData.length >= MAX_CANDLE_POINTS) {
+          oneMinListenerActive = false; // stop adding more candles
+        }
+
         oneMinChart.data.datasets[0].data = oneMinData;
         oneMinChart.update('none');
       }
     });
 
+    // 3) 5-min candles: /5minVix25
     const fiveMinRef = db.ref('/5minVix25');
+    let fiveMinListenerActive = true;
+
     fiveMinRef.limitToLast(MAX_CANDLE_POINTS).on('child_added', (snapshot) => {
+      if (!fiveMinListenerActive) return;
+
       const candle = snapshot.val();
       if (candle && candle.epoch && candle.open && candle.high && candle.low && candle.close) {
         const time = epochToDate(candle.epoch);
@@ -234,18 +256,15 @@ HTML = '''<!DOCTYPE html>
           l: candle.low,
           c: candle.close
         });
-        if (fiveMinData.length > MAX_CANDLE_POINTS) fiveMinData.shift();
+
+        if (fiveMinData.length >= MAX_CANDLE_POINTS) {
+          fiveMinListenerActive = false; // stop adding more candles
+        }
+
         fiveMinChart.data.datasets[0].data = fiveMinData;
         fiveMinChart.update('none');
       }
     });
   </script>
 </body>
-</html>'''
-
-@app.route('/')
-def home():
-    return Response(HTML, mimetype='text/html')
-
-if __name__ == '__main__':
-    app.run(debug=True)
+</html>
