@@ -1,8 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Vix25 Candlestick & Live Tick Chart</title>
+    <title>VIX 25 - Live & Candlestick Charts</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
     <style>
         body {
             background: #121212;
@@ -15,11 +17,10 @@
             background: #1e1e1e;
             border-radius: 8px;
             max-width: 1000px;
-            margin: auto;
+            margin: 30px auto;
             display: block;
         }
         h2 {
-            margin-bottom: 10px;
             color: #00e676;
         }
     </style>
@@ -27,110 +28,15 @@
 <body>
 
     <h2>Live Ticks for R_25 (Line Chart)</h2>
-    <canvas id="liveTicksChart" width="1000" height="400"></canvas>
+    <canvas id="liveTicksChart" width="1000" height="350"></canvas>
 
-    <script>
-        const ctx = document.getElementById('liveTicksChart').getContext('2d');
+    <h2>1-Min Candlestick Chart</h2>
+    <canvas id="candlestickChart1m" width="1000" height="350"></canvas>
 
-        // Create an empty Chart.js line chart
-        const liveTicksChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: [], // timestamps (human readable)
-                datasets: [{
-                    label: 'Quote',
-                    data: [], // quotes
-                    borderColor: '#00e676',
-                    backgroundColor: 'rgba(0, 230, 118, 0.3)',
-                    fill: true,
-                    tension: 0.25,
-                    pointRadius: 0,
-                    borderWidth: 2
-                }]
-            },
-            options: {
-                animation: false,
-                responsive: true,
-                scales: {
-                    x: {
-                        type: 'time',
-                        time: {
-                            parser: 'HH:mm:ss',
-                            tooltipFormat: 'HH:mm:ss',
-                            unit: 'second',
-                            displayFormats: {
-                                second: 'HH:mm:ss'
-                            }
-                        },
-                        ticks: {
-                            color: 'white',
-                            maxRotation: 0,
-                            autoSkip: true,
-                            maxTicksLimit: 15
-                        },
-                        grid: {
-                            color: '#333'
-                        }
-                    },
-                    y: {
-                        ticks: {
-                            color: 'white'
-                        },
-                        grid: {
-                            color: '#333'
-                        },
-                        beginAtZero: false
-                    }
-                },
-                plugins: {
-                    legend: {
-                        labels: {
-                            color: 'white'
-                        }
-                    }
-                }
-            }
-        });
+    <h2>5-Min Candlestick Chart</h2>
+    <canvas id="candlestickChart5m" width="1000" height="350"></canvas>
 
-        async function fetchLiveTicks() {
-            try {
-                const response = await fetch('https://fir-8908c-default-rtdb.firebaseio.com/ticks/R_25.json?orderBy="epoch"&limitToLast=100');
-                const data = await response.json();
-
-                if (!data) {
-                    console.warn("No tick data found.");
-                    return;
-                }
-
-                // Convert object to array and sort by epoch ascending
-                const ticksArray = Object.values(data).sort((a,b) => a.epoch - b.epoch);
-
-                const labels = [];
-                const quotes = [];
-
-                ticksArray.forEach(tick => {
-                    const date = new Date(tick.epoch * 1000);
-                    // Format as HH:mm:ss for x-axis
-                    const timeStr = date.toLocaleTimeString('en-GB', { hour12: false });
-                    labels.push(timeStr);
-                    quotes.push(tick.quote);
-                });
-
-                liveTicksChart.data.labels = labels;
-                liveTicksChart.data.datasets[0].data = quotes;
-                liveTicksChart.update();
-
-            } catch (error) {
-                console.error("Error fetching live ticks:", error);
-            }
-        }
-
-        // Initial fetch
-        fetchLiveTicks();
-
-        // Update every 5 seconds
-        setInterval(fetchLiveTicks, 5000);
-    </script>
+    <script src="candles.js"></script>
 
 </body>
 </html>
