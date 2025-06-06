@@ -1,148 +1,256 @@
-from flask import Flask, render_template_string
-import requests
-
-app = Flask(__name__)
-
-# HTML page for live chart with trendline overlay
-CANDLES_HTML = """
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Live Tick Chart with Trendlines</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        body {
-            background: #121212;
-            color: white;
-            font-family: Arial;
-            text-align: center;
-        }
-        canvas {
-            margin-top: 20px;
-            background-color: #1e1e1e;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stacked Live Charts: Tick + 1m & 5m Candles</title>
+  <style>
+    body {
+      margin: 0; padding: 0; font-family: Arial, sans-serif;
+      background: #121212; color: #eee;
+      display: flex; flex-direction: column; align-items: center;
+    }
+    h2 {
+      margin: 10px 0 5px 0; font-weight: normal;
+    }
+    .chart-container {
+      width: 90vw;
+      max-width: 900px;
+      margin: 10px 0;
+      background: #1e1e1e;
+      padding: 8px;
+      border-radius: 6px;
+    }
+    canvas {
+      /* Keep height fixed but width responsive */
+      width: 100% !important;
+      height: 250px !important;
+    }
+  </style>
 </head>
 <body>
-    <h2>📉 Live Tick Chart with Channel Detection</h2>
-    <canvas id="tickChart" width="1000" height="400"></canvas>
+  <h2>Live Tick Chart (Line)</h2>
+  <div class="chart-container">
+    <canvas id="tickChart"></canvas>
+  </div>
 
-    <script>
-        const ctx = document.getElementById('tickChart').getContext('2d');
-        const tickData = {
-            labels: [],
-            datasets: [{
-                label: 'R_25 Ticks',
-                data: [],
-                borderColor: 'lime',
-                backgroundColor: 'transparent',
-                tension: 0.2,
-                pointRadius: 0,
-            }]
-        };
+  <h2>1-Minute Candlestick Chart</h2>
+  <div class="chart-container">
+    <canvas id="oneMinChart"></canvas>
+  </div>
 
-        const trendlineDatasetTemplate = (label, color) => ({
-            label: label,
-            data: [],
-            borderColor: color,
-            borderDash: [5, 5],
-            fill: false,
-            pointRadius: 0,
-            tension: 0,
+  <h2>5-Minute Candlestick Chart</h2>
+  <div class="chart-container">
+    <canvas id="fiveMinChart"></canvas>
+  </div>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+  <!-- Chart.js + financial plugin -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@3.7.0/dist/chartjs-chart-financial.min.js"></script>
+
+  <script>
+    // --- Initialize Firebase ---
+    // REPLACE with your actual Firebase config from Firebase console
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+      databaseURL: "https://vix75-f6684-default-rtdb.firebaseio.com/",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: "SENDER_ID",
+      appId: "APP_ID"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // --- Utility function to convert epoch to JS Date ---
+    function epochToDate(epoch) {
+      // epoch assumed in seconds or milliseconds? Usually seconds.
+      return new Date(epoch * 1000);
+    }
+
+    // --- Setup Chart.js charts ---
+
+    // 1) Live Tick Chart (Line)
+    const tickCtx = document.getElementById('tickChart').getContext('2d');
+    const tickChart = new Chart(tickCtx, {
+      type: 'line',
+      data: {
+        datasets: [{
+          label: 'Tick Price',
+          borderColor: 'lime',
+          backgroundColor: 'rgba(0,255,0,0.1)',
+          data: [], // {x: date, y: price}
+          pointRadius: 0,
+          borderWidth: 1.5,
+          cubicInterpolationMode: 'monotone',
+          tension: 0.3,
+        }]
+      },
+      options: {
+        animation: false,
+        scales: {
+          x: {
+            type: 'time',
+            time: { tooltipFormat: 'MMM d, HH:mm:ss' },
+            ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 }
+          },
+          y: {
+            title: { display: true, text: 'Price' },
+            beginAtZero: false,
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: { mode: 'nearest', intersect: false }
+        },
+        maintainAspectRatio: false,
+      }
+    });
+
+    // 2) 1-Minute Candlestick Chart
+    const oneMinCtx = document.getElementById('oneMinChart').getContext('2d');
+    const oneMinChart = new Chart(oneMinCtx, {
+      type: 'candlestick',
+      data: {
+        datasets: [{
+          label: '1-min OHLC',
+          data: [], // {x: date, o, h, l, c}
+          borderColor: '#1e90ff',
+          borderWidth: 1,
+          color: {
+            up: '#26a69a',
+            down: '#ef5350',
+            unchanged: '#999',
+          }
+        }]
+      },
+      options: {
+        animation: false,
+        scales: {
+          x: {
+            type: 'time',
+            time: { tooltipFormat: 'MMM d, HH:mm' },
+            ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 }
+          },
+          y: {
+            title: { display: true, text: 'Price' },
+            beginAtZero: false,
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: { mode: 'nearest', intersect: false }
+        },
+        maintainAspectRatio: false,
+      }
+    });
+
+    // 3) 5-Minute Candlestick Chart
+    const fiveMinCtx = document.getElementById('fiveMinChart').getContext('2d');
+    const fiveMinChart = new Chart(fiveMinCtx, {
+      type: 'candlestick',
+      data: {
+        datasets: [{
+          label: '5-min OHLC',
+          data: [], // {x: date, o, h, l, c}
+          borderColor: '#ffa500',
+          borderWidth: 1,
+          color: {
+            up: '#4caf50',
+            down: '#f44336',
+            unchanged: '#999',
+          }
+        }]
+      },
+      options: {
+        animation: false,
+        scales: {
+          x: {
+            type: 'time',
+            time: { tooltipFormat: 'MMM d, HH:mm' },
+            ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 }
+          },
+          y: {
+            title: { display: true, text: 'Price' },
+            beginAtZero: false,
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: { mode: 'nearest', intersect: false }
+        },
+        maintainAspectRatio: false,
+      }
+    });
+
+    // --- Data arrays ---
+    let tickData = [];
+    let oneMinData = [];
+    let fiveMinData = [];
+
+    // --- Max points to keep for performance ---
+    const MAX_TICK_POINTS = 200;      // last 200 ticks
+    const MAX_CANDLE_POINTS = 100;   // last 100 candles
+
+    // --- Firebase listeners ---
+
+    // 1) Live ticks: /ticks/R_25
+    const ticksRef = db.ref('/ticks/R_25');
+    ticksRef.limitToLast(MAX_TICK_POINTS).on('child_added', (snapshot) => {
+      const tick = snapshot.val();
+      if (tick && tick.epoch && tick.quote) {
+        const time = epochToDate(tick.epoch);
+        const price = tick.quote;
+        tickData.push({ x: time, y: price });
+
+        if (tickData.length > MAX_TICK_POINTS) tickData.shift();
+        tickChart.data.datasets[0].data = tickData;
+        tickChart.update('none');
+      }
+    });
+
+    // 2) 1-min candles: /1minVix25
+    const oneMinRef = db.ref('/1minVix25');
+    oneMinRef.limitToLast(MAX_CANDLE_POINTS).on('child_added', (snapshot) => {
+      const candle = snapshot.val();
+      if (candle && candle.epoch && candle.open && candle.high && candle.low && candle.close) {
+        const time = epochToDate(candle.epoch);
+        oneMinData.push({
+          x: time,
+          o: candle.open,
+          h: candle.high,
+          l: candle.low,
+          c: candle.close
         });
+        if (oneMinData.length > MAX_CANDLE_POINTS) oneMinData.shift();
+        oneMinChart.data.datasets[0].data = oneMinData;
+        oneMinChart.update('none');
+      }
+    });
 
-        const config = {
-            type: 'line',
-            data: tickData,
-            options: {
-                animation: false,
-                scales: {
-                    x: {
-                        ticks: { color: 'white' }
-                    },
-                    y: {
-                        ticks: { color: 'white' }
-                    }
-                },
-                plugins: {
-                    legend: { labels: { color: 'white' }}
-                }
-            }
-        };
-
-        const tickChart = new Chart(ctx, config);
-
-        // Fetch ticks every second
-        async function fetchTicks() {
-            const res = await fetch("https://fir-8908c-default-rtdb.firebaseio.com/ticks/R_25.json");
-            const data = await res.json();
-            const ticks = Object.values(data || {}).slice(-600);
-
-            tickChart.data.labels = ticks.map(t => new Date(t.epoch * 1000).toLocaleTimeString());
-            tickChart.data.datasets[0].data = ticks.map(t => t.quote);
-            tickChart.update();
-        }
-
-        // Fetch and overlay trendlines
-        async function fetchTrendlines() {
-            const res = await fetch("https://fir-8908c-default-rtdb.firebaseio.com/analysis/R_25.json");
-            const data = await res.json();
-
-            // Remove old trendline datasets
-            tickChart.data.datasets = tickChart.data.datasets.slice(0, 1);
-
-            if (!data) return;
-
-            for (const channel of data) {
-                const { type, upper, lower } = channel;
-                if (!upper || !lower) continue;
-
-                const color = type === "up" ? "blue" : type === "down" ? "red" : "white";
-
-                const upperLine = trendlineDatasetTemplate(`${type.toUpperCase()} Upper`, color);
-                const lowerLine = trendlineDatasetTemplate(`${type.toUpperCase()} Lower`, color);
-
-                upperLine.data = upper.map(p => ({ x: new Date(p[0] * 1000).toLocaleTimeString(), y: p[1] }));
-                lowerLine.data = lower.map(p => ({ x: new Date(p[0] * 1000).toLocaleTimeString(), y: p[1] }));
-
-                tickChart.data.datasets.push(upperLine, lowerLine);
-            }
-
-            tickChart.update();
-        }
-
-        setInterval(() => {
-            fetchTicks();
-            fetchTrendlines();
-        }, 1000);
-
-        fetchTicks();
-        fetchTrendlines();
-    </script>
+    // 3) 5-min candles: /5minVix25
+    const fiveMinRef = db.ref('/5minVix25');
+    fiveMinRef.limitToLast(MAX_CANDLE_POINTS).on('child_added', (snapshot) => {
+      const candle = snapshot.val();
+      if (candle && candle.epoch && candle.open && candle.high && candle.low && candle.close) {
+        const time = epochToDate(candle.epoch);
+        fiveMinData.push({
+          x: time,
+          o: candle.open,
+          h: candle.high,
+          l: candle.low,
+          c: candle.close
+        });
+        if (fiveMinData.length > MAX_CANDLE_POINTS) fiveMinData.shift();
+        fiveMinChart.data.datasets[0].data = fiveMinData;
+        fiveMinChart.update('none');
+      }
+    });
+  </script>
 </body>
 </html>
-"""
-
-@app.route("/")
-def home():
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head><title>Tick Stream Dashboard</title></head>
-    <body style="text-align:center;font-family:Arial;background:#121212;color:white;padding:50px;">
-        <h1>📡 Streaming Deriv Tick Data for <b>R_25</b> to Firebase</h1>
-        <a href="/candles">
-            <button style="margin-top:20px;padding:12px 20px;font-size:16px;background:#00e676;border:none;color:white;border-radius:5px;">
-                🔍 View Chart
-            </button>
-        </a>
-    </body>
-    </html>
-    """
-
-@app.route("/candles")
-def candles():
-    return render_template_string(CANDLES_HTML)
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
