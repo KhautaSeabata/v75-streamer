@@ -22,14 +22,18 @@ def detect_extremes(ticks):
 
     return hh, ll
 
-def make_trendline(points):
+def make_trendline(points, ticks):
     if len(points) < 2:
         return []
 
     (x1, y1), (x2, y2) = points[0], points[-1]
     m = (y2 - y1) / (x2 - x1 + 1e-6)
     b = y1 - m * x1
-    return [m * x + b for x in range(x1, x2 + 1)]
+
+    return [
+        {"x": ticks[x]["epoch"] * 1000, "y": m * x + b}
+        for x in range(x1, x2 + 1)
+    ]
 
 def push_line(label, values):
     requests.patch(f"{FIREBASE}/analysis/R_25.json", json={
@@ -41,11 +45,11 @@ def main():
     hh, ll = detect_extremes(ticks)
 
     if len(hh) >= 2:
-        upper = make_trendline(hh)
+        upper = make_trendline(hh, ticks)
         push_line("upper_trendline", upper)
 
     if len(ll) >= 2:
-        lower = make_trendline(ll)
+        lower = make_trendline(ll, ticks)
         push_line("lower_trendline", lower)
 
 if __name__ == "__main__":
