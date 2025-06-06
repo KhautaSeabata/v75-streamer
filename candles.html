@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>VIX 25 - Live & Candlestick Charts</title>
+    <title>Vix25 Live Charts</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
@@ -11,7 +11,6 @@
             color: white;
             font-family: Arial, sans-serif;
             padding: 20px;
-            text-align: center;
         }
         canvas {
             background: #1e1e1e;
@@ -21,22 +20,193 @@
             display: block;
         }
         h2 {
+            text-align: center;
             color: #00e676;
         }
     </style>
 </head>
 <body>
 
-    <h2>Live Ticks for R_25 (Line Chart)</h2>
-    <canvas id="liveTicksChart" width="1000" height="350"></canvas>
+<h2>Live Ticks (Line Chart)</h2>
+<canvas id="liveTicksChart" width="1000" height="350"></canvas>
 
-    <h2>1-Min Candlestick Chart</h2>
-    <canvas id="candlestickChart1m" width="1000" height="350"></canvas>
+<h2>1-Min Candlesticks</h2>
+<canvas id="candles1m" width="1000" height="350"></canvas>
 
-    <h2>5-Min Candlestick Chart</h2>
-    <canvas id="candlestickChart5m" width="1000" height="350"></canvas>
+<h2>5-Min Candlesticks</h2>
+<canvas id="candles5m" width="1000" height="350"></canvas>
 
-    <script src="candles.js"></script>
+<script>
+const tickCtx = document.getElementById('liveTicksChart').getContext('2d');
+const ctx1m = document.getElementById('candles1m').getContext('2d');
+const ctx5m = document.getElementById('candles5m').getContext('2d');
 
+// --- Tick Chart ---
+const liveTicksChart = new Chart(tickCtx, {
+    type: 'line',
+    data: {
+        labels: [],
+        datasets: [{
+            label: 'Quote',
+            data: [],
+            borderColor: '#00e676',
+            backgroundColor: 'rgba(0, 230, 118, 0.2)',
+            fill: true,
+            tension: 0.2,
+            pointRadius: 0,
+            borderWidth: 2
+        }]
+    },
+    options: {
+        animation: false,
+        responsive: true,
+        scales: {
+            x: {
+                type: 'time',
+                time: {
+                    tooltipFormat: 'HH:mm:ss',
+                    displayFormats: {
+                        second: 'HH:mm:ss'
+                    }
+                },
+                ticks: {
+                    color: 'white'
+                },
+                grid: {
+                    color: '#333'
+                }
+            },
+            y: {
+                ticks: {
+                    color: 'white'
+                },
+                grid: {
+                    color: '#333'
+                }
+            }
+        },
+        plugins: {
+            legend: {
+                labels: { color: 'white' }
+            }
+        }
+    }
+});
+
+// --- 1m Candle Chart ---
+const candleChart1m = new Chart(ctx1m, {
+    type: 'candlestick',
+    data: { datasets: [{ label: '1m', data: [], color: { up: '#00e676', down: '#ff5252' } }] },
+    options: {
+        animation: false,
+        responsive: true,
+        scales: {
+            x: {
+                type: 'time',
+                time: {
+                    tooltipFormat: 'HH:mm',
+                    displayFormats: {
+                        minute: 'HH:mm'
+                    }
+                },
+                ticks: { color: 'white' },
+                grid: { color: '#333' }
+            },
+            y: {
+                ticks: { color: 'white' },
+                grid: { color: '#333' }
+            }
+        },
+        plugins: {
+            legend: { labels: { color: 'white' } }
+        }
+    }
+});
+
+// --- 5m Candle Chart ---
+const candleChart5m = new Chart(ctx5m, {
+    type: 'candlestick',
+    data: { datasets: [{ label: '5m', data: [], color: { up: '#00bcd4', down: '#ef5350' } }] },
+    options: JSON.parse(JSON.stringify(candleChart1m.options))
+});
+
+// --- Fetch & Update Functions ---
+async function fetchLiveTicks() {
+    const res = await fetch('https://fir-8908c-default-rtdb.firebaseio.com/ticks/R_25.json?orderBy="epoch"&limitToLast=100');
+    const data = await res.json();
+    if (!data) return;
+
+    const ticks = Object.values(data).sort((a, b) => a.epoch - b.epoch);
+    liveTicksChart.data.labels = ticks.map(t => new Date(t.epoch * 1000));
+    liveTicksChart.data.datasets[0].data = ticks.map(t => t.quote);
+    liveTicksChart.update();
+}
+
+async function fetchCandles(path, chart) {
+    const res = await fetch(`https://fir-8908c-default-rtdb.firebaseio.com/candles/${path}.json`);
+    const data = await res.json();
+    if (!data) return;
+
+    const candles = Object.values(data).sort((a, b) => a.epoch - b.epoch).map(c => ({
+        x: new Date(c.epoch * 1000),
+        o: c.open,
+        h: c.high,
+        l: c.low,
+        c: c.close
+    }));
+
+    chart.data.datasets[0].data = candles;
+    chart.update();
+}
+
+async function fetchTrendlines() {
+    const res = await fetch('https://fir-8908c-default-rtdb.firebaseio.com/analysis/R_25.json');
+    const data = await res.json();
+    if (!data) return;
+
+    liveTicksChart.data.datasets = liveTicksChart.data.datasets.filter(ds => ds.label === 'Quote');
+
+    if (data.upper_trendline?.points) {
+        liveTicksChart.data.datasets.push({
+            label: 'Upper Trendline',
+            data: data.upper_trendline.points.map(p => ({ x: new Date(p.x), y: p.y })),
+            borderColor: 'orange',
+            borderDash: [5, 5],
+            borderWidth: 2,
+            pointRadius: 0,
+            fill: false,
+            tension: 0,
+            parsing: false
+        });
+    }
+
+    if (data.lower_trendline?.points) {
+        liveTicksChart.data.datasets.push({
+            label: 'Lower Trendline',
+            data: data.lower_trendline.points.map(p => ({ x: new Date(p.x), y: p.y })),
+            borderColor: 'cyan',
+            borderDash: [5, 5],
+            borderWidth: 2,
+            pointRadius: 0,
+            fill: false,
+            tension: 0,
+            parsing: false
+        });
+    }
+
+    liveTicksChart.update();
+}
+
+// --- Update All Every 5 Seconds ---
+async function updateAll() {
+    await fetchLiveTicks();
+    await fetchTrendlines();
+    await fetchCandles("1m/R_25", candleChart1m);
+    await fetchCandles("5m/R_25", candleChart5m);
+}
+
+updateAll();
+setInterval(updateAll, 5000);
+</script>
 </body>
 </html>
