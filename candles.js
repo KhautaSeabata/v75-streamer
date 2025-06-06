@@ -1,4 +1,5 @@
-const FIREBASE = "https://fir-8908c-default-rtdb.firebaseio.com";
+const FIREBASE = "https://vix25-486b9-default-rtdb.firebaseio.com";
+
 
 // ----------- LIVE TICKS -------------
 const liveCtx = document.getElementById('liveTicksChart').getContext('2d');
